@@ -1,11 +1,11 @@
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "com.yqsh.protector"
-    compileSdk = 34
+    compileSdk = 37
+    ndkVersion = "30.0.16248370"
 
     defaultConfig {
         minSdk = 23
@@ -56,14 +56,16 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        }
     }
 
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            version = "3.31.0"
         }
     }
 
@@ -108,10 +110,15 @@ fun plantShadowhookPrefabBypass() {
             so.createNewFile()
         }
     }
-    val gradleHome = file("${System.getProperty("user.home")}/.gradle/caches")
+    // Honour GRADLE_USER_HOME (D:\GradleHome on this machine), not the default ~/.gradle.
+    val gradleHome = file(
+        System.getenv("GRADLE_USER_HOME")
+            ?: "${System.getProperty("user.home")}/.gradle"
+    ).resolve("caches")
     val searchRoots = mutableListOf<File>()
-    gradleHome.listFiles()?.filter { it.isDirectory && it.name.startsWith("transforms") }
-        ?.let { searchRoots.addAll(it) }
+    // Gradle 9 moved transforms from caches/transforms-* to caches/<version>/transforms.
+    // Searching the whole caches tree covers both layouts.
+    searchRoots += gradleHome
     searchRoots += layout.buildDirectory.get().asFile
     searchRoots.filter { it.isDirectory }.forEach { root ->
         root.walkTopDown()

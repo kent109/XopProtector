@@ -1,13 +1,21 @@
 plugins {
-    id("com.android.application") version "8.2.2" apply false
-    id("com.android.library") version "8.2.2" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+    id("com.android.application") version "9.5.1" apply false
+    id("com.android.library") version "9.5.1" apply false
 }
 
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import javax.inject.Inject
+import org.gradle.api.DefaultTask
+import org.gradle.process.ExecOperations
 
-tasks.register("exportShellFiles") {
+// Gradle 9 removed Project.exec(). Tasks that spawn processes must inject ExecOperations.
+abstract class ExecTask : DefaultTask() {
+    @get:Inject
+    abstract val execOperations: ExecOperations
+}
+
+tasks.register<ExecTask>("exportShellFiles") {
     group = "protector"
     description = "Export shell classes.dex and .so into executable/shell-files"
     dependsOn(":native:assembleRelease")
@@ -58,7 +66,7 @@ tasks.register("exportShellFiles") {
         if (tmpDexDir.exists()) tmpDexDir.deleteRecursively()
         tmpDexDir.mkdirs()
 
-        exec {
+        execOperations.exec {
             commandLine(d8.absolutePath, "--output", tmpDexDir.absolutePath, jar.absolutePath)
         }
         val produced = tmpDexDir.listFiles()?.firstOrNull { it.name.endsWith(".dex") }
@@ -307,7 +315,7 @@ fun minElfLoadAlign(so: File): Long {
     }
 }
 
-tasks.register("protectDemo") {
+tasks.register<ExecTask>("protectDemo") {
     group = "protector"
     description = "Build demo, export shell, pack+sign protected APK (debug keystore + channel)"
     dependsOn(":demo:assembleRelease", "exportShellFiles", ":packer:jar")
@@ -325,7 +333,7 @@ tasks.register("protectDemo") {
         if (!debugKs.isFile) {
             throw GradleException("debug keystore not found: ${debugKs.absolutePath}")
         }
-        exec {
+        execOperations.exec {
             commandLine(
                 "java", "-jar", packerJar.absolutePath,
                 demoApk.absolutePath,
@@ -374,13 +382,13 @@ tasks.register("syncUnimpSampleAssets") {
     }
 }
 
-tasks.register("buildUnimpXopDemo") {
+tasks.register<ExecTask>("buildUnimpXopDemo") {
     group = "protector"
     description = "npm run build:app in uniapp-demo (requires Node.js)"
     doLast {
         val demoDir = rootProject.file("uniapp-demo")
         val npmCmd = if (System.getProperty("os.name").lowercase().contains("windows")) "npm.cmd" else "npm"
-        exec {
+        execOperations.exec {
             workingDir = demoDir
             commandLine(npmCmd, "run", "build:app")
         }
@@ -422,7 +430,7 @@ tasks.register("syncUnimpXopDemoAssets") {
     }
 }
 
-tasks.register("protectUnimpDemo") {
+tasks.register<ExecTask>("protectUnimpDemo") {
     group = "protector"
     description = "Build unimp-host release, then pack with balanced + SO safe (UniApp smoke)"
     dependsOn(":unimp-host:assembleRelease", "exportShellFiles", ":packer:jar")
@@ -441,7 +449,7 @@ tasks.register("protectUnimpDemo") {
         }
         println("Using packer jar: ${packerJar.name}")
         println("Input: ${hostApk.absolutePath}")
-        exec {
+        execOperations.exec {
             commandLine(
                 "java", "-jar", packerJar.absolutePath,
                 hostApk.absolutePath,
@@ -485,7 +493,7 @@ tasks.register("protectUnimpDemo") {
  * CI / no-device check: assemble host release, run packer unit tests, ensure shell +
  * UniMP assets are present. Does not require an emulator.
  */
-tasks.register("checkUnimpDemo") {
+tasks.register<ExecTask>("checkUnimpDemo") {
     group = "verification"
     description = "CI: assembleRelease + packer tests + asset/shell sanity (no device)"
     dependsOn(
@@ -517,7 +525,7 @@ tasks.register("checkUnimpDemo") {
         }
 
         // Lightweight packer "dry-run": invoke jar --help / usage must exit non-crash.
-        exec {
+        execOperations.exec {
             commandLine("java", "-jar", packerJar.absolutePath)
             isIgnoreExitValue = true
         }
